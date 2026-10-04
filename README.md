@@ -93,6 +93,20 @@ feature/*  --PR-->  develop  --PR-->  main
   in the ArgoCD repo points `flyerss-dev` at the `develop` branch and `flyerss-prod` at
   `main`, with values from `envs/<env>/flyerss.yaml`.
 
+### Login and CSRF
+
+CSRF origin checking is **off** (`csrf.trustedOrigins: ['*']` in `vite.config.ts`).
+
+SvelteKit rejects form POSTs whose `Origin` does not match the origin it believes it is
+serving, and `adapter-node` assumes **https** unless a proxy sets `x-forwarded-proto`. Over
+plain http — a `kubectl port-forward` on `localhost:8080`, say — `/login` returned
+`403 Cross-site POST form submissions are forbidden`. The allowlist is baked in at build
+time, so keeping it on would mean a rebuild every time a new URL needs to reach the app.
+
+The trade: any website can make a logged-in browser POST to this app. It is an internal
+tool behind a shared password, so that is an accepted risk rather than an overlooked one.
+Re-enable by narrowing that array to the real origins.
+
 ### Before the first deploy
 
 1. Create the `flyers` project in Harbor and give `robot$ci` push access.
