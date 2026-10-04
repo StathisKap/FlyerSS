@@ -13,6 +13,7 @@
 
 	let portrait = $state<HTMLImageElement | null>(null);
 	let portraitFile = $state<File | null>(null);
+	let portraitKey = $state('');
 	let tr = $state<Transform>({ x: 0, y: 0, scale: 1 });
 	let name = $state('');
 
@@ -22,6 +23,11 @@
 	let drawerOpen = $state(false);
 	let saving = $state(false);
 	let error = $state('');
+	let lastSaved = $state('');
+
+	/** What a saved flyer is made of — re-downloading an identical one must not save again. */
+	const signature = () =>
+		JSON.stringify([template.id, name.trim(), tr.x, tr.y, tr.scale, portraitKey]);
 
 	let stageW = $state(0);
 	let stageH = $state(0);
@@ -45,16 +51,18 @@
 		if (portrait) tr = coverWindow(template.window, portrait.naturalWidth, portrait.naturalHeight);
 	}
 
-	async function setPortrait(src: string, file: File | null, transform?: Transform) {
+	async function setPortrait(src: string, file: File | null, key: string, transform?: Transform) {
 		const img = await loadImage(src);
 		portrait = img;
 		portraitFile = file;
+		portraitKey = key;
 		tr = transform ?? coverWindow(template.window, img.naturalWidth, img.naturalHeight);
 	}
 
 	function onFile(e: Event) {
 		const file = (e.target as HTMLInputElement).files?.[0];
-		if (file) setPortrait(URL.createObjectURL(file), file);
+		if (!file) return;
+		setPortrait(URL.createObjectURL(file), file, `${file.name}:${file.size}:${file.lastModified}`);
 	}
 
 	// ---- pointer interaction: one finger moves the portrait, two scale it ----
@@ -153,12 +161,20 @@
 
 			// Not awaited: iOS only allows share() while the tap is still "active", and
 			// waiting for the upload spends that. The flyer still lands in MinIO.
-			const saved = fetch('/api/flyers', { method: 'POST', body: formFor(blob) })
-				.then(async (res) => {
-					if (res.ok) flyers = [await res.json(), ...flyers];
-					else error = `Downloaded, but not saved (${res.status})`;
-				})
-				.catch(() => (error = 'Downloaded, but not saved'));
+			// Nothing changed since the last save, so this download is just another copy.
+			const sig = signature();
+			const saved =
+				sig === lastSaved
+					? Promise.resolve()
+					: fetch('/api/flyers', { method: 'POST', body: formFor(blob) })
+							.then(async (res) => {
+								if (!res.ok) return void (error = `Downloaded, but not saved (${res.status})`);
+								const meta: FlyerMeta = await res.json();
+								flyers = [meta, ...flyers];
+								portraitKey = meta.portraitKey;
+								lastSaved = signature();
+							})
+							.catch(() => (error = 'Downloaded, but not saved'));
 
 			if (navigator.canShare?.({ files: [file] })) {
 				// iOS share sheet — "Save Image" puts it in Photos, not Files
@@ -183,14 +199,24 @@
 		const form = new FormData();
 		if (portraitFile) form.set('portrait', portraitFile);
 		form.set('output', blob, 'output.png');
-		form.set('meta', JSON.stringify({ name, templateId: template.id, transform: tr }));
+		form.set(
+			'meta',
+			JSON.stringify({
+				name,
+				templateId: template.id,
+				transform: tr,
+				// re-saving a flyer opened from the drawer: no new upload, copy the stored portrait
+				portraitKey: portraitFile ? undefined : portraitKey
+			})
+		);
 		return form;
 	}
 
 	async function open(f: FlyerMeta) {
 		template = templateById(f.templateId);
 		name = f.name;
-		await setPortrait(`/obj/${f.portraitKey}`, null, f.transform);
+		await setPortrait(`/obj/${f.portraitKey}`, null, f.portraitKey, f.transform);
+		lastSaved = signature();
 		drawerOpen = false;
 	}
 
@@ -202,6 +228,8 @@
 	function newFlyer() {
 		portrait = null;
 		portraitFile = null;
+		portraitKey = '';
+		lastSaved = '';
 		name = '';
 		zoom = 1;
 		drawerOpen = false;
