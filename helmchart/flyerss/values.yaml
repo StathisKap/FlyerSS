@@ -52,13 +52,6 @@ externalSecrets:
     - key: S3_SECRET_KEY
       remoteKey: FLYERSS_S3_SECRET_KEY
 
-ingress:
-  enabled: false
-  className: traefik
-  annotations: {}
-  host: ""
-  tls: []
-
 # Service account settings
 serviceAccount:
   create: true

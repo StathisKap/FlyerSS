@@ -105,8 +105,6 @@ feature/*  --PR-->  develop  --PR-->  main
 4. The repo needs `GH_TOKEN`, `HARBOR_PASSWORD`, `CF_ACCESS_CLIENT_ID`,
    `CF_ACCESS_CLIENT_SECRET` secrets and `HARBOR_URL`, `HARBOR_USERNAME` vars — same set
    as ListApp.
-5. `ingress.enabled` is `false` in both envs; turn it on with a `host` once you have picked
-   one (that is the part of the Terraform/DNS side you said you would handle).
 
 The app needs a Node runtime and network access to MinIO. In the cluster that is
 `S3_ENDPOINT=http://minio.minio.svc.cluster.local` — MinIO has no ingress, so local dev
