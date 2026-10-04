@@ -1,0 +1,64 @@
+replicaCount: 1
+
+image:
+  repository: harbor.stathis-kapnidis.com/flyers/flyerss
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 80
+  containerPort: 3000
+
+# Non-secret configuration. Secrets come from externalSecrets.env below.
+env:
+  - name: S3_ENDPOINT
+    value: http://minio.minio.svc.cluster.local
+  - name: S3_BUCKET
+    value: flyerss
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+# External Secrets Operator integration (ESO - Infisical)
+externalSecrets:
+  enabled: true
+  clusterSecretStore: "datacenter-stathis-argocd-cluster-secret-store-prod"
+  # Harbor credentials
+  dockerCredentials:
+    enabled: true
+    registry: harbor.stathis-kapnidis.com
+    username: "robot$ci"
+    passwordKey: "stathiskap-HARBOR_PASSWORD"
+  # App secrets -> one Secret consumed with envFrom
+  env:
+    - key: APP_PASSWORD
+      remoteKey: FLYERSS_APP_PASSWORD
+    - key: SESSION_SECRET
+      remoteKey: FLYERSS_SESSION_SECRET
+    - key: S3_ACCESS_KEY
+      remoteKey: FLYERSS_S3_ACCESS_KEY
+    - key: S3_SECRET_KEY
+      remoteKey: FLYERSS_S3_SECRET_KEY
+
+# Service account settings
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

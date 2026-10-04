@@ -1,0 +1,215 @@
+name: Deploy
+
+# feature/* -> develop  : build a new image, point dev at it, open the promotion PR
+# develop   -> main     : ship the tag dev is already running to prod (no rebuild)
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - develop
+      - main
+    paths-ignore:
+      - '**.md'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: flyerss-deploy-${{ github.event.pull_request.base.ref }}
+  cancel-in-progress: false
+
+env:
+  APP: flyerss
+  HARBOR_PROJECT: flyers
+  ARGOCD_REPO: stathiskapnidis/datacenter-stathis-argocd
+
+jobs:
+  # ==========================================================================
+  # DEV BUILD (merge into develop)
+  # ==========================================================================
+  build:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'develop'
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.build.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Bump version
+        id: version
+        run: |
+          OLD_VERSION=$(node -p "require('./package.json').version")
+          npm version patch --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumped version: $OLD_VERSION -> $NEW_VERSION"
+
+      - name: Configure Docker for Cloudflare Access
+        run: |
+          HARBOR_HOST="${{ vars.HARBOR_URL }}"
+          HARBOR_HOST="${HARBOR_HOST#https://}"
+          HARBOR_HOST="${HARBOR_HOST#http://}"
+          echo "HARBOR_HOST=$HARBOR_HOST" >> $GITHUB_ENV
+
+          mkdir -p ~/.docker
+          cat > ~/.docker/config.json << EOF
+          {
+            "auths": {
+              "$HARBOR_HOST": {
+                "auth": "$(echo -n '${{ vars.HARBOR_USERNAME }}:${{ secrets.HARBOR_PASSWORD }}' | base64)"
+              }
+            },
+            "HttpHeaders": {
+              "CF-Access-Client-Id": "${{ secrets.CF_ACCESS_CLIENT_ID }}",
+              "CF-Access-Client-Secret": "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"
+            }
+          }
+          EOF
+
+      - name: Build and push
+        id: build
+        run: |
+          export DOCKER_BUILDKIT=1
+          VERSION="${{ steps.version.outputs.version }}"
+          IMAGE="${HARBOR_HOST}/${{ env.HARBOR_PROJECT }}/${{ env.APP }}:${VERSION}"
+
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Built and pushed: $IMAGE"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --staged --quiet || git commit -m "chore(flyerss): bump to ${{ steps.version.outputs.version }} [skip ci]"
+
+          for i in 1 2 3 4 5; do
+            git pull --rebase && git push && break
+            echo "Push failed, retrying in 3s... (attempt $i/5)"
+            sleep 3
+          done
+
+  # ==========================================================================
+  # PROMOTE (merge into main) — reuse whatever tag dev is running, never rebuild
+  # ==========================================================================
+  get-dev-tag:
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Read dev tag from ArgoCD
+        id: tag
+        run: |
+          curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o yq && chmod +x yq
+
+          curl -sH "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            "https://raw.githubusercontent.com/${{ env.ARGOCD_REPO }}/main/envs/dev/${{ env.APP }}.yaml" \
+            -o values.yaml
+
+          TAG=$(./yq '.image.tag' values.yaml)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Promoting dev tag: $TAG"
+
+  # ==========================================================================
+  # UPDATE ARGOCD (dev or prod, depending on which branch was merged into)
+  # ==========================================================================
+  update-argocd:
+    needs:
+      - build
+      - get-dev-tag
+    if: |
+      always() &&
+      github.event.pull_request.merged == true &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      (needs.get-dev-tag.result == 'success' || needs.get-dev-tag.result == 'skipped') &&
+      (needs.build.result == 'success' || needs.get-dev-tag.result == 'success')
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Clone ArgoCD repo
+        run: git clone https://${{ secrets.GH_TOKEN }}@github.com/${{ env.ARGOCD_REPO }}.git argocd-repo
+
+      - name: Update values
+        run: |
+          TARGET="${{ github.event.pull_request.base.ref }}"
+
+          if [[ "$TARGET" == "develop" ]]; then
+            ENV=dev
+            TAG="${{ needs.build.outputs.tag }}"
+          else
+            ENV=prod
+            TAG="${{ needs.get-dev-tag.outputs.tag }}"
+          fi
+
+          if [[ -z "$TAG" ]]; then
+            echo "No tag to write — refusing to deploy a blank image tag" >&2
+            exit 1
+          fi
+
+          VALUES_FILE="argocd-repo/envs/$ENV/${{ env.APP }}.yaml"
+          yq -i ".image.tag = \"$TAG\"" "$VALUES_FILE"
+
+          echo "Updated $VALUES_FILE:"
+          cat "$VALUES_FILE"
+
+          cd argocd-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "chore(${{ env.APP }}): update $ENV to $TAG"
+
+          for i in 1 2 3 4 5; do
+            git pull --rebase && git push && break
+            echo "Push failed, retrying in 5s... (attempt $i/5)"
+            sleep 5
+          done
+
+  # ==========================================================================
+  # OPEN PROMOTION PR TO MAIN (after a dev deploy; never merges it)
+  # ==========================================================================
+  promote-to-main:
+    needs: update-argocd
+    if: |
+      needs.update-argocd.result == 'success' &&
+      github.event.pull_request.base.ref == 'develop'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Opens (or leaves open) the promotion PR and stops. Merging it is a human
+      # decision: that merge is what moves prod.
+      - name: Create or update PR to main
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          EXISTING_PR=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number')
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already open for develop -> main; new commits are included automatically."
+          else
+            PR_URL=$(gh pr create \
+              --base main \
+              --head develop \
+              --title "chore: promote develop to main" \
+              --body "Automated promotion PR opened after a successful dev deployment. Merging releases the tag dev is currently running to prod." \
+            )
+            echo "Created PR: $PR_URL"
+          fi
