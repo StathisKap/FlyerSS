@@ -119,6 +119,13 @@ if it is ever exposed more widely.
 The Download button also reports a failed save in the UI instead of swallowing it, which is
 what made the 413 invisible in the first place.
 
+Download saves only when something actually changed — template, name, portrait or its
+transform. Re-downloading a flyer you just made, or one opened from the drawer and left
+alone, produces the file again without adding another record. Re-saving a flyer opened from
+the drawer uploads no portrait, so the server copies the stored one into the new flyer's
+folder; every flyer owns its own `portrait.jpg`, `output.png` and `meta.json` and stays
+editable even if the one it came from is deleted.
+
 ### Before the first deploy
 
 1. Create the `flyers` project in Harbor and give `robot$ci` push access.
