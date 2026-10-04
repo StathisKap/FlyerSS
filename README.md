@@ -96,8 +96,11 @@ feature/*  --PR-->  develop  --PR-->  main
 ### Before the first deploy
 
 1. Create the `flyers` project in Harbor and give `robot$ci` push access.
-2. Add to Infisical: `FLYERSS_APP_PASSWORD`, `FLYERSS_SESSION_SECRET`,
-   `FLYERSS_S3_ACCESS_KEY`, `FLYERSS_S3_SECRET_KEY`.
+2. Wire up the secrets in the ArgoCD repo (`externalSecrets.env` in
+   `envs/<env>/flyerss.yaml`). The build never needs them — a pod missing any of
+   `APP_PASSWORD`, `SESSION_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` answers every request
+   with `500 Not configured: <names> not set`, so a misconfiguration is obvious rather
+   than silently accepting an empty password.
 3. Create the `flyerss-dev` and `flyerss-prod` buckets in the cluster MinIO.
 4. The repo needs `GH_TOKEN`, `HARBOR_PASSWORD`, `CF_ACCESS_CLIENT_ID`,
    `CF_ACCESS_CLIENT_SECRET` secrets and `HARBOR_URL`, `HARBOR_USERNAME` vars — same set

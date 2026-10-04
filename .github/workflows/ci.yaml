@@ -1,7 +1,7 @@
 name: CI
 
 # The gate on feature/* -> develop and develop -> main. Nothing merges that
-# does not typecheck, pass the geometry checks and produce a build.
+# does not typecheck, pass the geometry checks and build.
 on:
   pull_request:
     branches:
@@ -38,12 +38,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  chart:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Lint chart
-        run: helm lint helmchart/flyerss && helm template flyerss helmchart/flyerss > /dev/null
