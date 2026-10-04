@@ -12,13 +12,6 @@ service:
 
 # Non-secret configuration. Secrets come from externalSecrets.env below.
 env:
-  # adapter-node rejects form POSTs whose Origin header does not match the URL it
-  # thinks it is serving. Behind a proxy it must be told to trust the forwarded
-  # headers, or /login 403s. (ORIGIN=https://<public-url> is the alternative.)
-  - name: PROTOCOL_HEADER
-    value: x-forwarded-proto
-  - name: HOST_HEADER
-    value: x-forwarded-host
   - name: S3_ENDPOINT
     value: http://minio.minio.svc.cluster.local
   - name: S3_BUCKET
