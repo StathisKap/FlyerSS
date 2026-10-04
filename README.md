@@ -102,9 +102,9 @@ feature/*  --PR-->  develop  --PR-->  main
    with `500 Not configured: <names> not set`, so a misconfiguration is obvious rather
    than silently accepting an empty password.
 3. Create the `flyerss-dev` and `flyerss-prod` buckets in the cluster MinIO.
-4. The repo needs `GH_TOKEN`, `HARBOR_PASSWORD`, `CF_ACCESS_CLIENT_ID`,
-   `CF_ACCESS_CLIENT_SECRET` secrets and `HARBOR_URL`, `HARBOR_USERNAME` vars — same set
-   as ListApp.
+4. Give the repo the same secrets and vars ListApp has: secrets `GH_TOKEN`,
+   `HARBOR_PASSWORD`, `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET`; vars `HARBOR_URL`,
+   `HARBOR_USERNAME`. They are per-repo, so a new repo starts with none.
 
 The app needs a Node runtime and network access to MinIO. In the cluster that is
 `S3_ENDPOINT=http://minio.minio.svc.cluster.local` — MinIO has no ingress, so local dev
