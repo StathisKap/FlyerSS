@@ -107,6 +107,18 @@ The trade: any website can make a logged-in browser POST to this app. It is an i
 tool behind a shared password, so that is an accepted risk rather than an overlooked one.
 Re-enable by narrowing that array to the real origins.
 
+### Saving
+
+`adapter-node` caps request bodies at **512K** by default, and a saved flyer is a ~1.2 MB
+multipart POST (rendered PNG + original portrait), so the save silently 413'd in the cluster
+while working fine in dev, where Vite applies no limit. Both envs now set
+`BODY_SIZE_LIMIT: "Infinity"`. The pod has a 512Mi memory cap, so an absurd upload is a
+memory risk rather than a rejected request — fine for an internal tool, worth a real number
+if it is ever exposed more widely.
+
+The Download button also reports a failed save in the UI instead of swallowing it, which is
+what made the 413 invisible in the first place.
+
 ### Before the first deploy
 
 1. Create the `flyers` project in Harbor and give `robot$ci` push access.
