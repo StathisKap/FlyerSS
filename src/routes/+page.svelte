@@ -21,6 +21,7 @@
 	let moving = $state(false);
 	let drawerOpen = $state(false);
 	let saving = $state(false);
+	let error = $state('');
 
 	let stageW = $state(0);
 	let stageH = $state(0);
@@ -145,24 +146,45 @@
 	// ---- save + download ----
 	async function download() {
 		saving = true;
+		error = '';
 		try {
 			const blob = await renderFlyer(template, portrait, tr, name);
+			const file = new File([blob], `${slug(name)}.png`, { type: 'image/png' });
 
-			const form = new FormData();
-			if (portraitFile) form.set('portrait', portraitFile);
-			form.set('output', blob, 'output.png');
-			form.set('meta', JSON.stringify({ name, templateId: template.id, transform: tr }));
-			const saved = await fetch('/api/flyers', { method: 'POST', body: form });
-			if (saved.ok) flyers = [await saved.json(), ...flyers];
+			// Not awaited: iOS only allows share() while the tap is still "active", and
+			// waiting for the upload spends that. The flyer still lands in MinIO.
+			const saved = fetch('/api/flyers', { method: 'POST', body: formFor(blob) })
+				.then(async (res) => {
+					if (res.ok) flyers = [await res.json(), ...flyers];
+					else error = `Downloaded, but not saved (${res.status})`;
+				})
+				.catch(() => (error = 'Downloaded, but not saved'));
 
-			const a = document.createElement('a');
-			a.href = URL.createObjectURL(blob);
-			a.download = `${slug(name)}.png`;
-			a.click();
-			URL.revokeObjectURL(a.href);
+			if (navigator.canShare?.({ files: [file] })) {
+				// iOS share sheet — "Save Image" puts it in Photos, not Files
+				await navigator.share({ files: [file] }).catch((e) => {
+					if ((e as Error).name !== 'AbortError') throw e;
+				});
+			} else {
+				const a = document.createElement('a');
+				a.href = URL.createObjectURL(file);
+				a.download = file.name;
+				a.click();
+				URL.revokeObjectURL(a.href);
+			}
+
+			await saved;
 		} finally {
 			saving = false;
 		}
+	}
+
+	function formFor(blob: Blob) {
+		const form = new FormData();
+		if (portraitFile) form.set('portrait', portraitFile);
+		form.set('output', blob, 'output.png');
+		form.set('meta', JSON.stringify({ name, templateId: template.id, transform: tr }));
+		return form;
 	}
 
 	async function open(f: FlyerMeta) {
@@ -276,6 +298,10 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if error}
+		<button class="error" onclick={() => (error = '')}>{error}</button>
+	{/if}
 
 	<footer style:padding-bottom="calc(0.75rem + env(safe-area-inset-bottom))">
 		<input type="text" bind:value={name} placeholder="Name" autocomplete="off" />
@@ -426,6 +452,19 @@
 		border-radius: 999px;
 		padding: 0.6rem 1.2rem;
 		color: var(--gold);
+	}
+
+	.error {
+		margin: 0;
+		width: 100%;
+		border: none;
+		border-radius: 0;
+		padding: 0.6rem 0.75rem;
+		background: #4a1d1d;
+		border-top: 1px solid #7a2e2e;
+		color: #ffc9c9;
+		text-align: center;
+		cursor: pointer;
 	}
 
 	footer {
