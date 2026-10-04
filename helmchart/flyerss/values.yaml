@@ -44,13 +44,14 @@ externalSecrets:
   # App secrets -> one Secret consumed with envFrom
   env:
     - key: APP_PASSWORD
-      remoteKey: FLYERSS_APP_PASSWORD
+      remoteKey: stathis-k3s-1-FLYERSS_APP_PASSWORD
     - key: SESSION_SECRET
-      remoteKey: FLYERSS_SESSION_SECRET
+      remoteKey: stathis-k3s-1-FLYERSS_SESSION_SECRET
+    # the cluster MinIO credentials listapp already uses
     - key: S3_ACCESS_KEY
-      remoteKey: FLYERSS_S3_ACCESS_KEY
+      remoteKey: stathis-k3s-1-MINIO_ACCESS_KEY
     - key: S3_SECRET_KEY
-      remoteKey: FLYERSS_S3_SECRET_KEY
+      remoteKey: stathis-k3s-1-MINIO_SECRET_KEY
 
 # Service account settings
 serviceAccount:
