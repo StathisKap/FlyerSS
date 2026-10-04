@@ -3,21 +3,46 @@ name: Deploy
 # feature/* -> develop  : build a new image, point dev at it, open the promotion PR
 # develop   -> main     : ship the tag dev is already running to prod (no rebuild)
 on:
-  pull_request:
-    types: [closed]
+  # Dev: build from develop's tip rather than from each merged PR, so a burst of
+  # merges produces one image instead of several racing to publish.
+  push:
     branches:
       - develop
+    paths-ignore:
+      - '**.md'
+
+  # Prod: pull_request_target, NOT pull_request. Every develop -> main promotion PR
+  # is topped by the "chore(flyerss): bump to x.y.z [skip ci]" commit the dev build
+  # itself pushes, and GitHub honours [skip ci] in the head commit for push and
+  # pull_request events — so the prod half silently never ran. [skip ci] does not
+  # apply to pull_request_target, which is also evaluated from the BASE branch
+  # (main), the correct semantics for a promotion gate.
+  pull_request_target:
+    types: [closed]
+    branches:
       - main
     paths-ignore:
       - '**.md'
+
+  # Escape hatch: promote by hand if an event is ever suppressed again.
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which environment to deploy'
+        required: true
+        default: main
+        type: choice
+        options: [develop, main]
 
 permissions:
   contents: write
   pull-requests: write
 
 concurrency:
-  group: flyerss-deploy-${{ github.event.pull_request.base.ref }}
-  cancel-in-progress: false
+  # Dev builds supersede each other; prod promotions must never be cancelled
+  # half-way through writing the ArgoCD values.
+  group: flyerss-deploy-${{ (github.event_name == 'push' || github.event.inputs.target == 'develop') && 'develop' || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   APP: flyerss
@@ -26,10 +51,33 @@ env:
 
 jobs:
   # ==========================================================================
-  # DEV BUILD (merge into develop)
+  # RESOLVE TARGET
+  # ==========================================================================
+  resolve:
+    # push -> always; pull_request_target -> only a genuine merge, not a close.
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
+    runs-on: ubuntu-22.04
+    outputs:
+      target: ${{ steps.target.outputs.target }}
+    steps:
+      - name: Resolve target branch
+        id: target
+        run: |
+          case "${{ github.event_name }}" in
+            push)                 TARGET=develop ;;
+            pull_request_target)  TARGET='${{ github.event.pull_request.base.ref }}' ;;
+            workflow_dispatch)    TARGET='${{ github.event.inputs.target }}' ;;
+            *)                    echo "unexpected event ${{ github.event_name }}" >&2; exit 1 ;;
+          esac
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+          echo "Deploy target: $TARGET"
+
+  # ==========================================================================
+  # DEV BUILD (develop)
   # ==========================================================================
   build:
-    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'develop'
+    needs: resolve
+    if: needs.resolve.outputs.target == 'develop'
     runs-on: ubuntu-22.04
     outputs:
       tag: ${{ steps.build.outputs.tag }}
@@ -89,6 +137,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
+          # [skip ci] stops this push to develop from retriggering the dev build forever.
+          # It no longer suppresses prod: that half listens on pull_request_target.
           git diff --staged --quiet || git commit -m "chore(flyerss): bump to ${{ steps.version.outputs.version }} [skip ci]"
 
           for i in 1 2 3 4 5; do
@@ -101,7 +151,8 @@ jobs:
   # PROMOTE (merge into main) — reuse whatever tag dev is running, never rebuild
   # ==========================================================================
   get-dev-tag:
-    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    needs: resolve
+    if: needs.resolve.outputs.target == 'main'
     runs-on: ubuntu-22.04
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -124,11 +175,12 @@ jobs:
   # ==========================================================================
   update-argocd:
     needs:
+      - resolve
       - build
       - get-dev-tag
     if: |
       always() &&
-      github.event.pull_request.merged == true &&
+      needs.resolve.result == 'success' &&
       (needs.build.result == 'success' || needs.build.result == 'skipped') &&
       (needs.get-dev-tag.result == 'success' || needs.get-dev-tag.result == 'skipped') &&
       (needs.build.result == 'success' || needs.get-dev-tag.result == 'success')
@@ -144,7 +196,7 @@ jobs:
 
       - name: Update values
         run: |
-          TARGET="${{ github.event.pull_request.base.ref }}"
+          TARGET="${{ needs.resolve.outputs.target }}"
 
           if [[ "$TARGET" == "develop" ]]; then
             ENV=dev
@@ -181,10 +233,12 @@ jobs:
   # OPEN PROMOTION PR TO MAIN (after a dev deploy; never merges it)
   # ==========================================================================
   promote-to-main:
-    needs: update-argocd
+    needs:
+      - resolve
+      - update-argocd
     if: |
       needs.update-argocd.result == 'success' &&
-      github.event.pull_request.base.ref == 'develop'
+      needs.resolve.outputs.target == 'develop'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code

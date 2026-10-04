@@ -16,6 +16,10 @@ export const s3 = new Client({
 
 export type { FlyerMeta };
 
+export async function copy(fromKey: string, toKey: string) {
+	await s3.copyObject(bucket, toKey, `/${bucket}/${fromKey}`);
+}
+
 export async function put(key: string, body: Buffer, contentType: string) {
 	await s3.putObject(bucket, key, body, body.length, { 'Content-Type': contentType });
 }

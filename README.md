@@ -82,13 +82,21 @@ feature/*  --PR-->  develop  --PR-->  main
 
 - **`.github/workflows/ci.yaml`** gates every PR into `develop` or `main`:
   typecheck, tests, build, `helm lint`.
-- **`.github/workflows/deploy.yaml`** runs on PR *merge*:
-  - into `develop` — patch-bumps the version, builds and pushes
+- **`.github/workflows/deploy.yaml`** has two halves with different triggers:
+  - **`push` to `develop`** — patch-bumps the version, builds and pushes
     `harbor.stathis-kapnidis.com/flyers/flyerss:<version>`, writes that tag into
     `envs/dev/flyerss.yaml` in the ArgoCD repo, and opens the `develop -> main` promotion
     PR. Merging that PR is left to a human; it is the thing that moves prod.
-  - into `main` — reads the tag `envs/dev/flyerss.yaml` is running and writes it to
+  - **`pull_request_target` closed on `main`** — reads the tag `envs/dev/flyerss.yaml` is running and writes it to
     `envs/prod/flyerss.yaml`. **No rebuild**, so prod ships the exact image dev proved.
+
+  The prod half must be `pull_request_target`, not `pull_request`: the dev build pushes a
+  `chore(flyerss): bump to x.y.z [skip ci]` commit to `develop`, that commit becomes the head
+  of the promotion PR, and GitHub honours `[skip ci]` on the head commit of `push` and
+  `pull_request` events — so prod silently never deployed. `[skip ci]` does not apply to
+  `pull_request_target`. It is still needed on the commit itself, to stop the push to
+  `develop` retriggering the dev build forever. `workflow_dispatch` is there as a manual
+  escape hatch for either environment.
 - **`helmchart/flyerss/`** is the chart ArgoCD renders. `applicationsets/flyerss-appset.yaml`
   in the ArgoCD repo points `flyerss-dev` at the `develop` branch and `flyerss-prod` at
   `main`, with values from `envs/<env>/flyerss.yaml`.
@@ -118,6 +126,13 @@ if it is ever exposed more widely.
 
 The Download button also reports a failed save in the UI instead of swallowing it, which is
 what made the 413 invisible in the first place.
+
+Download saves only when something actually changed — template, name, portrait or its
+transform. Re-downloading a flyer you just made, or one opened from the drawer and left
+alone, produces the file again without adding another record. Re-saving a flyer opened from
+the drawer uploads no portrait, so the server copies the stored one into the new flyer's
+folder; every flyer owns its own `portrait.jpg`, `output.png` and `meta.json` and stays
+editable even if the one it came from is deleted.
 
 ### Before the first deploy
 
