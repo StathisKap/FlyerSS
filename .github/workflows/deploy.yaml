@@ -2,8 +2,7 @@ name: Deploy
 
 # feature/* -> develop  : build a new image, point dev at it, open the promotion PR
 # develop   -> main     : ship the tag dev is already running to prod (no rebuild)
-on:
-  pull_request:
+on: pull_request:
     types: [closed]
     branches:
       - develop
