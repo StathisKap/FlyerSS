@@ -1,0 +1,49 @@
+name: CI
+
+# The gate on feature/* -> develop and develop -> main. Nothing merges that
+# does not typecheck, pass the geometry checks and produce a build.
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths-ignore:
+      - '**.md'
+
+concurrency:
+  group: flyerss-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  chart:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Lint chart
+        run: helm lint helmchart/flyerss && helm template flyerss helmchart/flyerss > /dev/null

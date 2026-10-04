@@ -117,6 +117,17 @@
 		if (!pts.length) moving = false;
 	}
 
+	/** Grow/shrink the portrait about the middle of the template's window. */
+	function sizeBy(ratio: number) {
+		if (!portrait) return;
+		const w = template.window;
+		tr = scaleAbout(tr, { x: w.x + w.w / 2, y: w.y + w.h / 2 }, ratio);
+		moving = true;
+		clearTimeout(sizeTimer);
+		sizeTimer = setTimeout(() => (moving = false), 400);
+	}
+	let sizeTimer: ReturnType<typeof setTimeout>;
+
 	function wheel(e: WheelEvent) {
 		e.preventDefault();
 		if (e.ctrlKey || e.metaKey) {
@@ -257,6 +268,13 @@
 				</label>
 			{/if}
 		</div>
+
+		{#if portrait}
+			<div class="size" title="Portrait size">
+				<button onclick={() => sizeBy(1.12)} aria-label="Portrait bigger">+</button>
+				<button onclick={() => sizeBy(1 / 1.12)} aria-label="Portrait smaller">−</button>
+			</div>
+		{/if}
 	</div>
 
 	<footer style:padding-bottom="calc(0.75rem + env(safe-area-inset-bottom))">
@@ -420,12 +438,37 @@
 	}
 	footer input {
 		flex: 1;
+		min-width: 4rem;
 	}
 	.swap {
+		flex: none;
+		width: 2.75rem;
+		height: 2.75rem;
+		display: grid;
+		place-items: center;
+		font-size: 1.1rem;
+		line-height: 1;
 		border: 1px solid var(--line);
 		border-radius: 10px;
 		background: var(--panel);
 		cursor: pointer;
+	}
+
+	.size {
+		position: absolute;
+		right: 0.75rem;
+		bottom: 0.75rem;
+		display: grid;
+		gap: 0.35rem;
+	}
+	.size button {
+		width: 2.75rem;
+		height: 2.75rem;
+		padding: 0;
+		font-size: 1.25rem;
+		line-height: 1;
+		background: #171718e6;
+		backdrop-filter: blur(8px);
 	}
 
 	.scrim {

@@ -1,7 +1,7 @@
 # FlyerSS — Flyer Self-Service
 
 A two-field flyer maker. Upload a portrait, position it behind the template, type a name,
-download the PNG. Replaces the Photoshop/`flyers.py` pipeline in the parent repo.
+download the PNG.
 
 ## Run
 
@@ -34,6 +34,7 @@ produces a Node server in `build/` (`node build`).
 |---|---|
 | Drag / one finger | move the portrait |
 | Wheel / pinch | scale the portrait |
+| `+` `−` bottom right | scale the portrait (one-handed, about the window centre) |
 | Double-tap or double-click | reset the portrait to fill the window |
 | `−` `100%` `+` | zoom the editor (⌘/ctrl + wheel too) |
 | `Full` button | cycles Full → Wireframe → Hidden |
@@ -70,6 +71,39 @@ Three things to know about `vic`:
   webfont if the team uses Android phones.
 
 ## Deployment
+
+```
+feature/*  --PR-->  develop  --PR-->  main
+             CI        |                |
+                   dev image        prod uses
+                   built, dev       the tag dev
+                   ArgoCD bumped    is running
+```
+
+- **`.github/workflows/ci.yaml`** gates every PR into `develop` or `main`:
+  typecheck, tests, build, `helm lint`.
+- **`.github/workflows/deploy.yaml`** runs on PR *merge*:
+  - into `develop` — patch-bumps the version, builds and pushes
+    `harbor.stathis-kapnidis.com/flyers/flyerss:<version>`, writes that tag into
+    `envs/dev/flyerss.yaml` in the ArgoCD repo, and opens the `develop -> main` promotion
+    PR. Merging that PR is left to a human; it is the thing that moves prod.
+  - into `main` — reads the tag `envs/dev/flyerss.yaml` is running and writes it to
+    `envs/prod/flyerss.yaml`. **No rebuild**, so prod ships the exact image dev proved.
+- **`helmchart/flyerss/`** is the chart ArgoCD renders. `applicationsets/flyerss-appset.yaml`
+  in the ArgoCD repo points `flyerss-dev` at the `develop` branch and `flyerss-prod` at
+  `main`, with values from `envs/<env>/flyerss.yaml`.
+
+### Before the first deploy
+
+1. Create the `flyers` project in Harbor and give `robot$ci` push access.
+2. Add to Infisical: `FLYERSS_APP_PASSWORD`, `FLYERSS_SESSION_SECRET`,
+   `FLYERSS_S3_ACCESS_KEY`, `FLYERSS_S3_SECRET_KEY`.
+3. Create the `flyerss-dev` and `flyerss-prod` buckets in the cluster MinIO.
+4. The repo needs `GH_TOKEN`, `HARBOR_PASSWORD`, `CF_ACCESS_CLIENT_ID`,
+   `CF_ACCESS_CLIENT_SECRET` secrets and `HARBOR_URL`, `HARBOR_USERNAME` vars — same set
+   as ListApp.
+5. `ingress.enabled` is `false` in both envs; turn it on with a `host` once you have picked
+   one (that is the part of the Terraform/DNS side you said you would handle).
 
 The app needs a Node runtime and network access to MinIO. In the cluster that is
 `S3_ENDPOINT=http://minio.minio.svc.cluster.local` — MinIO has no ingress, so local dev
