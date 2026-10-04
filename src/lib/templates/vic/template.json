@@ -1,0 +1,16 @@
+{
+  "label": "Crown Gala",
+  "width": 556,
+  "height": 694,
+  "exportScale": 2,
+  "window": { "x": 150, "y": 130, "w": 252, "h": 280 },
+  "nameBox": { "x": 40, "y": 50, "w": 476, "h": 60 },
+  "nameStyle": {
+    "family": "Didot, 'Playfair Display', 'Times New Roman', serif",
+    "weight": "400",
+    "size": 52,
+    "color": "#ffffff",
+    "letterSpacing": 3,
+    "uppercase": true
+  }
+}

@@ -1,0 +1,77 @@
+# FlyerSS — Flyer Self-Service
+
+A two-field flyer maker. Upload a portrait, position it behind the template, type a name,
+download the PNG. Replaces the Photoshop/`flyers.py` pipeline in the parent repo.
+
+## Run
+
+```bash
+cp .env.example .env   # fill in APP_PASSWORD, SESSION_SECRET, S3_*
+npm install
+npm run dev
+```
+
+`npm run check` typechecks, `npm test` runs the geometry self-checks, `npm run build`
+produces a Node server in `build/` (`node build`).
+
+## How it works
+
+- **Auth** — one shared password from `APP_PASSWORD`. The cookie is
+  `sha256(APP_PASSWORD:SESSION_SECRET)`, so there is no session store to keep and the
+  session never expires. Changing either env var logs everyone out.
+- **Storage** — MinIO only, no database. Each flyer is
+  `flyers/<timestamp>-<rand>/{portrait.jpg,output.png,meta.json}`. The id starts with a
+  sortable timestamp, so listing the prefixes gives newest-first ordering for free.
+- **Editor** — plain DOM: the portrait is an `<img>` with a CSS transform, the template PNG
+  sits on top of it, the name is positioned text. Export is a separate canvas pass at
+  native resolution, so the zoom level never affects the output.
+- **Images** are served through `/obj/<key>` rather than presigned URLs, which keeps them
+  same-origin and the export canvas untainted.
+
+## Controls
+
+| | |
+|---|---|
+| Drag / one finger | move the portrait |
+| Wheel / pinch | scale the portrait |
+| Double-tap or double-click | reset the portrait to fill the window |
+| `−` `100%` `+` | zoom the editor (⌘/ctrl + wheel too) |
+| `Full` button | cycles Full → Wireframe → Hidden |
+
+While the portrait is being moved, the template and name drop to 20% so you can see what
+you are positioning.
+
+## Templates
+
+A template is a folder in `src/lib/templates/<id>/` with a `template.png` (transparent
+where the portrait shows through) and a `template.json`. Drop in a second folder and it
+appears automatically — no code changes.
+
+```jsonc
+{
+  "width": 556, "height": 694,     // must match template.png exactly
+  "exportScale": 2,                // output is width×height×this
+  "window": { ... },               // the transparent hole: initial portrait fit + wireframe
+  "nameBox": { ... },              // where the name is drawn, shrink-to-fit
+  "nameStyle": { ... }             // family / weight / size / colour / tracking
+}
+```
+
+Three things to know about `vic`:
+
+- `template.png` is `~/Downloads/flyers-vic.png` with the baked-in "MOLLY MAE" painted
+  out, since the app draws the name itself. **Re-export it from the PSD without the name
+  layer** when convenient — the patch is a stretched row of background and will not
+  survive close inspection.
+- It is only 556×694, so `exportScale: 2` upscales the artwork. Export the PSD at
+  1112×1388 (or larger, and bump `width`/`height`/`window`/`nameBox` to match) for a crisp
+  result.
+- `nameStyle.family` leads with Didot, which exists on macOS/iOS but not Android. Add a
+  webfont if the team uses Android phones.
+
+## Deployment
+
+The app needs a Node runtime and network access to MinIO. In the cluster that is
+`S3_ENDPOINT=http://minio.minio.svc.cluster.local` — MinIO has no ingress, so local dev
+either uses the `local` mc alias (what `.env` points at now) or
+`kubectl port-forward svc/minio -n minio 9000:80`.
