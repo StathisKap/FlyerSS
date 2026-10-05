@@ -24,6 +24,9 @@
 	let saving = $state(false);
 	let error = $state('');
 	let lastSaved = $state('');
+	// The flyer being worked on. Empty = a fresh project, so the next download creates a
+	// record; once set, every download overwrites that record instead of adding another.
+	let currentId = $state('');
 
 	/** What a saved flyer is made of — re-downloading an identical one must not save again. */
 	const signature = () =>
@@ -170,7 +173,11 @@
 							.then(async (res) => {
 								if (!res.ok) return void (error = `Downloaded, but not saved (${res.status})`);
 								const meta: FlyerMeta = await res.json();
-								flyers = [meta, ...flyers];
+								const known = flyers.some((f) => f.id === meta.id);
+								flyers = known
+									? flyers.map((f) => (f.id === meta.id ? meta : f))
+									: [meta, ...flyers];
+								currentId = meta.id;
 								portraitKey = meta.portraitKey;
 								lastSaved = signature();
 							})
@@ -202,6 +209,8 @@
 		form.set(
 			'meta',
 			JSON.stringify({
+				// empty on a fresh project -> new record; otherwise overwrite this one
+				id: currentId || undefined,
 				name,
 				templateId: template.id,
 				transform: tr,
@@ -216,6 +225,7 @@
 		template = templateById(f.templateId);
 		name = f.name;
 		await setPortrait(`/obj/${f.portraitKey}`, null, f.portraitKey, f.transform);
+		currentId = f.id;
 		lastSaved = signature();
 		drawerOpen = false;
 	}
@@ -223,6 +233,7 @@
 	async function remove(f: FlyerMeta) {
 		await fetch(`/api/flyers/${f.id}`, { method: 'DELETE' });
 		flyers = flyers.filter((x) => x.id !== f.id);
+		if (currentId === f.id) newFlyer();
 	}
 
 	function newFlyer() {
@@ -230,6 +241,7 @@
 		portraitFile = null;
 		portraitKey = '';
 		lastSaved = '';
+		currentId = '';
 		name = '';
 		zoom = 1;
 		drawerOpen = false;
