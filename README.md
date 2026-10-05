@@ -127,12 +127,18 @@ if it is ever exposed more widely.
 The Download button also reports a failed save in the UI instead of swallowing it, which is
 what made the 413 invisible in the first place.
 
-Download saves only when something actually changed — template, name, portrait or its
-transform. Re-downloading a flyer you just made, or one opened from the drawer and left
-alone, produces the file again without adding another record. Re-saving a flyer opened from
-the drawer uploads no portrait, so the server copies the stored one into the new flyer's
-folder; every flyer owns its own `portrait.jpg`, `output.png` and `meta.json` and stays
-editable even if the one it came from is deleted.
+One flyer record per project, not per download. The first download creates the record;
+every download after that overwrites it, so a name typo fixed and re-downloaded four times
+leaves one flyer, not five. A new record comes only from **New** in the drawer, or from a
+fresh page load — the editor holds the current flyer id in memory and nothing persists it.
+Opening a flyer from the drawer adopts it, so edits land back on that record.
+
+On top of that, a download whose template, name, portrait and transform are all unchanged
+skips the upload entirely. `createdAt` survives updates, so the drawer ordering is stable.
+
+Re-saving a flyer whose portrait came from storage uploads no file, so the server copies
+the stored object; every flyer owns its own `portrait.jpg`, `output.png` and `meta.json`
+and stays editable even if the one it came from is deleted.
 
 ### Before the first deploy
 
