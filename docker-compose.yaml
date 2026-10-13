@@ -1,0 +1,16 @@
+services:
+  minio:
+    image: minio/minio
+    ports:
+      - '9000:9000'
+      - '9001:9001' # console
+    environment:
+      MINIO_ROOT_USER: listapp
+      MINIO_ROOT_PASSWORD: listapp123
+    # ponytail: a bucket is just a directory, so mkdir beats an mc sidecar
+    entrypoint: sh -c 'mkdir -p /data/flyerss && exec minio server /data --console-address :9001'
+    volumes:
+      - minio:/data
+
+volumes:
+  minio:

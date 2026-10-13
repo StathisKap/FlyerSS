@@ -183,7 +183,9 @@
 							})
 							.catch(() => (error = 'Downloaded, but not saved'));
 
-			if (navigator.canShare?.({ files: [file] })) {
+			// ponytail: touch points, not canShare — desktop Chrome/Safari can share files too and
+			// would pop a share sheet instead of downloading. A touch laptop still shares; fine.
+			if (navigator.maxTouchPoints > 0 && navigator.canShare?.({ files: [file] })) {
 				// iOS share sheet — "Save Image" puts it in Photos, not Files
 				await navigator.share({ files: [file] }).catch((e) => {
 					if ((e as Error).name !== 'AbortError') throw e;
