@@ -148,27 +148,31 @@ jobs:
           done
 
   # ==========================================================================
-  # PROMOTE (merge into main) — reuse whatever tag dev is running, never rebuild
+  # PROMOTE (merge into main) — ship the version main now holds, never rebuild
   # ==========================================================================
-  get-dev-tag:
+  get-prod-tag:
     needs: resolve
     if: needs.resolve.outputs.target == 'main'
     runs-on: ubuntu-22.04
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Read dev tag from ArgoCD
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GH_TOKEN }}
+
+      # The version on main IS the version of the code being promoted — the dev build
+      # bumped it and the promotion PR carried it across. Reading what dev happens to be
+      # running instead lets the two disagree: merge the PR while a dev build is still
+      # going and prod gets the previous tag, with nothing to show the mismatch.
+      - name: Read the version main is on
         id: tag
         run: |
-          curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o yq && chmod +x yq
-
-          curl -sH "Authorization: token ${{ secrets.GH_TOKEN }}" \
-            "https://raw.githubusercontent.com/${{ env.ARGOCD_REPO }}/main/envs/dev/${{ env.APP }}.yaml" \
-            -o values.yaml
-
-          TAG=$(./yq '.image.tag' values.yaml)
+          TAG=$(node -p "require('./package.json').version")
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Promoting dev tag: $TAG"
+          echo "Promoting the version on main: $TAG"
 
   # ==========================================================================
   # UPDATE ARGOCD (dev or prod, depending on which branch was merged into)
@@ -177,13 +181,13 @@ jobs:
     needs:
       - resolve
       - build
-      - get-dev-tag
+      - get-prod-tag
     if: |
       always() &&
       needs.resolve.result == 'success' &&
       (needs.build.result == 'success' || needs.build.result == 'skipped') &&
-      (needs.get-dev-tag.result == 'success' || needs.get-dev-tag.result == 'skipped') &&
-      (needs.build.result == 'success' || needs.get-dev-tag.result == 'success')
+      (needs.get-prod-tag.result == 'success' || needs.get-prod-tag.result == 'skipped') &&
+      (needs.build.result == 'success' || needs.get-prod-tag.result == 'success')
     runs-on: ubuntu-22.04
     steps:
       - name: Install yq
@@ -203,7 +207,7 @@ jobs:
             TAG="${{ needs.build.outputs.tag }}"
           else
             ENV=prod
-            TAG="${{ needs.get-dev-tag.outputs.tag }}"
+            TAG="${{ needs.get-prod-tag.outputs.tag }}"
           fi
 
           if [[ -z "$TAG" ]]; then
@@ -236,7 +240,11 @@ jobs:
     needs:
       - resolve
       - update-argocd
+    # always(): update-argocd depends on get-prod-tag, which is skipped on the dev path.
+    # Without this the skip propagates down the chain and the promotion PR is never opened.
     if: |
+      always() &&
+      needs.resolve.result == 'success' &&
       needs.update-argocd.result == 'success' &&
       needs.resolve.outputs.target == 'develop'
     runs-on: ubuntu-22.04
