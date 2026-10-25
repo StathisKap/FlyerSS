@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { coverWindow, scaleAbout } from './geometry.ts';
+import { centerRect, coverWindow, detectWindow, scaleAbout } from './geometry.ts';
 
 const win = { x: 150, y: 130, w: 252, h: 280 };
 
@@ -31,4 +31,39 @@ test('scaleAbout keeps the pinch anchor under the fingers', () => {
 	assert.ok(Math.abs(before.x - after.x) < 1e-9);
 	assert.ok(Math.abs(before.y - after.y) < 1e-9);
 	assert.equal(next.scale, 1);
+});
+
+test('detectWindow finds the transparent hole, ignoring opaque art', () => {
+	// 10x10 opaque template with a 4x3 transparent hole at (3,2)
+	const w = 10;
+	const h = 10;
+	const alpha = new Array(w * h).fill(255);
+	for (let y = 2; y < 5; y += 1) {
+		for (let x = 3; x < 7; x += 1) alpha[y * w + x] = 0;
+	}
+
+	assert.deepEqual(detectWindow(alpha, w, h), { x: 3, y: 2, w: 4, h: 3 });
+
+	// a fully opaque template has no window
+	assert.equal(detectWindow(new Array(w * h).fill(255), w, h), null);
+
+	// faint antialiasing still counts as a hole, solid-ish edges do not
+	const soft = new Array(w * h).fill(255);
+	soft[5 * w + 5] = 10;
+	assert.deepEqual(detectWindow(soft, w, h), { x: 5, y: 5, w: 1, h: 1 });
+	soft[5 * w + 5] = 40;
+	assert.equal(detectWindow(soft, w, h), null);
+});
+
+test('centerRect centres on the asked axis and leaves the other alone', () => {
+	const bounds = { width: 1000, height: 600 };
+	const rect = { x: 10, y: 20, w: 400, h: 100 };
+
+	assert.deepEqual(centerRect(rect, bounds, 'x'), { x: 300, y: 20, w: 400, h: 100 });
+	assert.deepEqual(centerRect(rect, bounds, 'y'), { x: 10, y: 250, w: 400, h: 100 });
+	assert.deepEqual(centerRect(rect, bounds, 'both'), { x: 300, y: 250, w: 400, h: 100 });
+
+	// a rect wider than the template centres to a negative offset rather than clamping,
+	// which keeps it symmetrical instead of flush left
+	assert.equal(centerRect({ ...rect, w: 1200 }, bounds, 'x').x, -100);
 });
