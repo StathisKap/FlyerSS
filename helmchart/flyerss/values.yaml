@@ -48,6 +48,8 @@ externalSecrets:
   env:
     - key: APP_PASSWORD
       remoteKey: stathis-k3s-1-FLYERSS_APP_PASSWORD
+    - key: ADMIN_PASSWORD
+      remoteKey: stathis-k3s-1-FLYERSS_ADMIN_PASSWORD
     - key: SESSION_SECRET
       remoteKey: stathis-k3s-1-FLYERSS_SESSION_SECRET
     # the cluster MinIO credentials listapp already uses
