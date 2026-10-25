@@ -143,8 +143,15 @@ feature/*  --PR-->  develop  --PR-->  main
     `harbor.stathis-kapnidis.com/flyers/flyerss:<version>`, writes that tag into
     `envs/dev/flyerss.yaml` in the ArgoCD repo, and opens the `develop -> main` promotion
     PR. Merging that PR is left to a human; it is the thing that moves prod.
-  - **`pull_request_target` closed on `main`** — reads the tag `envs/dev/flyerss.yaml` is running and writes it to
-    `envs/prod/flyerss.yaml`. **No rebuild**, so prod ships the exact image dev proved.
+  - **`pull_request_target` closed on `main`** — reads the version in `package.json` **on
+    main** and writes it to `envs/prod/flyerss.yaml`. **No rebuild**, so prod ships the exact
+    image dev proved.
+
+  The prod tag comes from main's own `package.json`, not from whatever dev happens to be
+  running, so the image and the code on main agree by construction. Reading dev's tag let
+  the two drift: merge the promotion PR while a dev build is mid-flight and prod silently
+  gets the previous tag. This assumes every version reaching main was built by a dev run —
+  true as long as `main` is only ever reached through `develop`.
 
   The prod half must be `pull_request_target`, not `pull_request`: the dev build pushes a
   `chore(flyerss): bump to x.y.z [skip ci]` commit to `develop`, that commit becomes the head
