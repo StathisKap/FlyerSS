@@ -7,6 +7,7 @@ const optional = (fallback = '') => (value: string | undefined) => value ?? fall
 
 export const variables = defineEnvVars({
 	APP_PASSWORD: { schema: optional(), description: 'The single shared password' },
+	ADMIN_PASSWORD: { schema: optional(), description: 'Gates /admin — templates and the flyer browser' },
 	SESSION_SECRET: { schema: optional(), description: 'openssl rand -hex 32' },
 	S3_ENDPOINT: { schema: optional('http://localhost:9000') },
 	S3_ACCESS_KEY: { schema: optional() },

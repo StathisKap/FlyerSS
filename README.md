@@ -42,33 +42,89 @@ produces a Node server in `build/` (`node build`).
 While the portrait is being moved, the template and name drop to 20% so you can see what
 you are positioning.
 
+## Finding a flyer design
+
+The burger drawer is a nav hub, not a list:
+
+- **Choose a flyer** → `/templates`, a grid of the available designs. Picking one stores it
+  in `localStorage`, so it stays selected across reloads and sessions until changed —
+  which is what you want when one event runs for weeks.
+- **All flyers** → `/flyers`, every flyer anyone has made, searchable by ambassador name or
+  design. Tapping one opens it back up in the editor.
+- **Previous flyers** stays below as the quick recent list it always was.
+
+Two link shapes make this shareable, which beats expecting people to go hunting in a menu:
+
+| link | does |
+|---|---|
+| `/?template=<id>` | opens the editor on that design **and** makes it the remembered pick |
+| `/?flyer=<id>` | reopens that saved flyer for editing |
+
+So a new event is a message to the group chat with a `?template=` link, not an announcement
+that a menu item changed.
+
+Opening a saved flyer switches the editor to *that* flyer's design without touching the
+remembered default — editing last month's flyer shouldn't change what you get next time you
+start a fresh one. A remembered design that has since been deleted or archived falls back to
+the first available one rather than erroring.
+
+## Admin panel
+
+`/admin` is gated by a **second** password, `ADMIN_PASSWORD`, with its own cookie — the
+team's shared `APP_PASSWORD` gets them the editor and nothing else, so nobody replaces a
+template by accident. Both are needed: no session at all redirects to `/login` first.
+
+Two tabs:
+
+- **Templates** — upload, retune, archive or delete.
+- **Flyers** — every saved flyer with a thumbnail, searchable by ambassador name or
+  template, with download and delete.
+
 ## Templates
 
-A template is a folder in `src/lib/templates/<id>/` with a `template.png` (transparent
-where the portrait shows through) and a `template.json`. Drop in a second folder and it
-appears automatically — no code changes.
+Templates live in MinIO at `templates/<id>/{template.png,template.json}` and are read at
+request time, so adding one needs no deploy. The id is slugged from the name
+(`Spring Ball` → `spring-ball`) and never changes afterwards, which is what keeps old
+flyers pointing at the right artwork.
 
-```jsonc
-{
-  "width": 556, "height": 694,     // must match template.png exactly
-  "exportScale": 2,                // output is width×height×this
-  "window": { ... },               // the transparent hole: initial portrait fit + wireframe
-  "nameBox": { ... },              // where the name is drawn, shrink-to-fit
-  "nameStyle": { ... }             // family / weight / size / colour / tracking
-}
+Uploading a PNG fills most of the config in by itself:
+
+- `width`/`height` come from the file, and `exportScale` is set to 1 — export at the size
+  you want the flyer to be and there is nothing to work out.
+- **`window`** — the transparent hole the portrait shows through — is found by scanning the
+  alpha channel for its bounding box. On the Crown Gala artwork this lands on
+  `509×568 at (300, 264)`, pixel-identical to what ImageMagick reports.
+- `nameBox` gets a first guess above the window; drag it into place on the preview, with
+  sample text rendered live in the real font. Both boxes are draggable (body moves, corner
+  resizes) and every number is editable in the form beside it.
+
+Export the artwork with the photo area **fully transparent** and **no name baked in** — the
+app draws the name itself.
+
+`nameStyle.family` leads with Didot, which exists on macOS/iOS but not Android. Add a
+webfont if the team uses Android phones.
+
+### Archive vs delete
+
+Deleting a template that flyers still reference would silently re-render them with whatever
+template sorted first, so the API refuses it with a 409 naming the count. **Archive**
+instead: it drops out of the editor's picker but still loads for the flyers that use it.
+Delete is only allowed at zero usage.
+
+### Migrating from the bundled folder
+
+Templates used to be globbed from `src/lib/templates/` at build time. One `mc` copy moves
+each one across, keeping the id so saved flyers still resolve:
+
+```bash
+mc cp src/lib/templates/vic/template.png  <alias>/<bucket>/templates/vic/template.png
+mc cp src/lib/templates/vic/template.json <alias>/<bucket>/templates/vic/template.json
 ```
 
-Three things to know about `vic`:
-
-- `template.png` is `~/Downloads/flyers-vic.png` with the baked-in "MOLLY MAE" painted
-  out, since the app draws the name itself. **Re-export it from the PSD without the name
-  layer** when convenient — the patch is a stretched row of background and will not
-  survive close inspection.
-- It is only 556×694, so `exportScale: 2` upscales the artwork. Export the PSD at
-  1112×1388 (or larger, and bump `width`/`height`/`window`/`nameBox` to match) for a crisp
-  result.
-- `nameStyle.family` leads with Didot, which exists on macOS/iOS but not Android. Add a
-  webfont if the team uses Android phones.
+`vic` was migrated as-is, still declaring `556×694` with `exportScale: 2` even though its
+PNG is now `1118×1402`. That is deliberate: saved flyers store the portrait transform in
+template coordinates, so changing those numbers would reposition every existing flyer.
+New uploads use native dimensions.
 
 ## Deployment
 

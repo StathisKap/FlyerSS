@@ -1,13 +1,22 @@
 <script lang="ts">
-	import { templates, templateById, fitFontSize, type Template } from '#lib/templates.js';
+	import { templateById, fitFontSize } from '#lib/templates.js';
+	import type { FlyerMeta, Template } from '#lib/types.js';
 	import { loadImage, renderFlyer, slug } from '#lib/render.js';
 	import { coverWindow, scaleAbout, type Transform } from '#lib/geometry.js';
-	import type { FlyerMeta } from '#lib/types.js';
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { readTemplatePref, writeTemplatePref } from '#lib/prefs.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
-	let template = $state<Template>(templates[0]);
+	// svelte-ignore state_referenced_locally -- starting point from the server; templates are
+	// uploaded in /admin and only change on reload
+	let templates = $state<Template[]>(data.templates);
+	// Undefined only while there are no templates at all, and the whole editor is behind
+	// `templates.length` below, so nothing ever reads it in that state.
+	// svelte-ignore state_referenced_locally
+	let template = $state<Template>(data.templates[0]);
 	// svelte-ignore state_referenced_locally -- server load is the initial list; we mutate it locally after
 	let flyers = $state<FlyerMeta[]>(data.flyers);
 
@@ -224,7 +233,7 @@
 	}
 
 	async function open(f: FlyerMeta) {
-		template = templateById(f.templateId);
+		template = templateById(templates, f.templateId);
 		name = f.name;
 		await setPortrait(`/obj/${f.portraitKey}`, null, f.portraitKey, f.transform);
 		currentId = f.id;
@@ -249,6 +258,24 @@
 		drawerOpen = false;
 	}
 
+	onMount(async () => {
+		const flyerId = page.url.searchParams.get('flyer');
+		if (flyerId) {
+			const known = flyers.find((f) => f.id === flyerId);
+			const meta = known ?? (await fetch(`/api/flyers/${flyerId}`).then((r) => (r.ok ? r.json() : null)));
+			if (meta) return open(meta);
+			error = 'That flyer no longer exists';
+		}
+
+		// A shared ?template= link also becomes this device's remembered pick.
+		const shared = page.url.searchParams.get('template');
+		if (shared) writeTemplatePref(shared);
+
+		const wanted = shared || readTemplatePref();
+		const found = templates.find((t) => t.id === wanted && !t.archived);
+		if (found) template = found;
+	});
+
 	const cycle = () =>
 		(mode = mode === 'full' ? 'wireframe' : mode === 'wireframe' ? 'hidden' : 'full');
 
@@ -258,7 +285,14 @@
 
 <svelte:head><title>Flyer Self-Service</title></svelte:head>
 
-<div class="app">
+{#if !templates.length}
+	<main class="empty">
+		<h1>No templates yet</h1>
+		<p>Upload one in the admin panel and it shows up here.</p>
+		<a class="go" href="/admin">Open admin</a>
+	</main>
+{:else}
+	<div class="app">
 	<header>
 		<button class="icon" onclick={() => (drawerOpen = true)} aria-label="Previous flyers">☰</button>
 		<div class="spacer"></div>
@@ -362,6 +396,17 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<div class="scrim" onclick={() => (drawerOpen = false)}></div>
 	<aside>
+		<nav class="drawer-nav">
+			<a href="/templates">
+				<span>Choose a flyer</span>
+				<small>{template?.label ?? 'None selected'}</small>
+			</a>
+			<a href="/flyers">
+				<span>All flyers</span>
+				<small>{flyers.length} made</small>
+			</a>
+		</nav>
+
 		<div class="drawer-head">
 			<strong>Previous flyers</strong>
 			<button onclick={newFlyer}>New</button>
@@ -384,9 +429,36 @@
 			{/each}
 		</ul>
 	</aside>
+	{/if}
 {/if}
 
 <style>
+	.empty {
+		min-height: 100dvh;
+		display: grid;
+		place-content: center;
+		justify-items: center;
+		gap: 0.75rem;
+		padding: 2rem;
+		text-align: center;
+	}
+	.empty h1 {
+		font-family: Didot, 'Playfair Display', Georgia, serif;
+		font-weight: 400;
+		margin: 0;
+	}
+	.empty p {
+		color: var(--muted);
+		margin: 0;
+	}
+	.go {
+		border: 1px solid var(--gold);
+		border-radius: 999px;
+		padding: 0.5rem 1.1rem;
+		color: var(--gold);
+		text-decoration: none;
+	}
+
 	.app {
 		height: 100dvh;
 		display: grid;
@@ -577,6 +649,29 @@
 	.muted {
 		color: var(--muted);
 	}
+	.drawer-nav {
+		display: grid;
+		gap: 0.4rem;
+		margin-bottom: 1.25rem;
+	}
+	.drawer-nav a {
+		display: grid;
+		gap: 0.1rem;
+		padding: 0.6rem 0.75rem;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--panel);
+		color: var(--text);
+		text-decoration: none;
+	}
+	.drawer-nav small {
+		color: var(--muted);
+		font-size: 0.75rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	aside ul {
 		list-style: none;
 		margin: 0;
