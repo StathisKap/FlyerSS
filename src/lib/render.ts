@@ -26,7 +26,9 @@ export async function renderFlyer(
 	const ctx = canvas.getContext('2d')!;
 	ctx.scale(s, s);
 
-	if (portrait) {
+	const template = await loadImage(t.url);
+	const paintPortrait = () => {
+		if (!portrait) return;
 		ctx.drawImage(
 			portrait,
 			tr.x,
@@ -34,9 +36,23 @@ export async function renderFlyer(
 			portrait.naturalWidth * tr.scale,
 			portrait.naturalHeight * tr.scale
 		);
-	}
+	};
 
-	ctx.drawImage(await loadImage(t.url), 0, 0, t.width, t.height);
+	// A template with a transparent hole is painted over the portrait. An opaque one would
+	// bury it, so the window box becomes a clip and the portrait goes on top instead — the
+	// same cut-through, without needing an alpha channel in the PNG.
+	if (t.cutout) {
+		ctx.drawImage(template, 0, 0, t.width, t.height);
+		ctx.save();
+		ctx.beginPath();
+		ctx.rect(t.window.x, t.window.y, t.window.w, t.window.h);
+		ctx.clip();
+		paintPortrait();
+		ctx.restore();
+	} else {
+		paintPortrait();
+		ctx.drawImage(template, 0, 0, t.width, t.height);
+	}
 
 	const text = t.nameStyle.uppercase ? name.toUpperCase() : name;
 	if (text.trim()) {

@@ -29,6 +29,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		height: config.height,
 		exportScale: config.exportScale || 1,
 		window: config.window,
+		cutout: config.cutout ?? false,
 		nameBox: config.nameBox,
 		nameStyle: config.nameStyle,
 		archived: config.archived ?? false,
