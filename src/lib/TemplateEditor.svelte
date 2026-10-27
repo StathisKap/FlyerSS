@@ -33,6 +33,7 @@
 	let win = $state<Rect>(seed?.window ?? { x: 0, y: 0, w: 10, h: 10 });
 	let nameBox = $state<Rect>(seed?.nameBox ?? { x: 0, y: 0, w: 10, h: 10 });
 	let nameStyle = $state<NameStyle>({ ...(seed?.nameStyle ?? DEFAULT_STYLE) });
+	let cutout = $state(seed?.cutout ?? false);
 
 	let imageFile = $state<File | null>(null);
 	let imageUrl = $state(seed?.url ?? '');
@@ -77,12 +78,15 @@
 		ctx.drawImage(img, 0, 0);
 		const found = detectWindow(alphaOf(ctx.getImageData(0, 0, width, height).data), width, height);
 
+		// No alpha channel to show through, so the window box has to do the cutting itself.
+		cutout = !found;
+
 		if (found) {
 			win = found;
 			detected = `Found a ${found.w}×${found.h} window at ${found.x}, ${found.y}`;
 		} else {
 			win = { x: Math.round(width * 0.25), y: Math.round(height * 0.25), w: Math.round(width * 0.5), h: Math.round(height * 0.5) };
-			detected = 'No transparent area found — the portrait will not show through. Place the window by hand.';
+			detected = 'No transparent area found — the photo window will be cut out of the template instead. Drag it where the photo should go.';
 		}
 
 		// A sensible first guess above the window; it gets dragged into place anyway.
@@ -109,6 +113,7 @@
 				height,
 				exportScale,
 				window: win,
+				cutout,
 				nameBox,
 				nameStyle,
 				archived: existing?.archived ?? false,
@@ -204,6 +209,14 @@
 				<button onclick={() => (win = centerRect(win, bnds, 'y'))} title="Centre vertically">↕</button>
 				<button onclick={() => (win = centerRect(win, bnds, 'both'))} title="Centre both ways">✛</button>
 			</div>
+			<label class="check">
+				<input type="checkbox" bind:checked={cutout} /> Cut this box out of the template
+			</label>
+			<p class="muted small">
+				{cutout
+					? 'The photo is drawn on top, clipped to this box — for templates with no transparent area.'
+					: 'The photo shows through the template\'s own transparent area.'}
+			</p>
 		</fieldset>
 
 		<fieldset>

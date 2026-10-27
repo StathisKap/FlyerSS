@@ -53,6 +53,16 @@
 	);
 	const displayScale = $derived(fit * zoom);
 
+	// Opaque template: clip the portrait to the window box and float it above the template
+	// instead of under it. Only in 'full' mode — wireframe/hidden exist to show the whole
+	// portrait while positioning it, so clipping there would defeat them.
+	const cutting = $derived(!!template.cutout && mode === 'full');
+	const clip = $derived.by(() => {
+		if (!cutting) return null;
+		const { x, y, w, h } = template.window;
+		return `inset(${y}px ${template.width - x - w}px ${template.height - y - h}px ${x}px)`;
+	});
+
 	const shownName = $derived(template.nameStyle.uppercase ? name.toUpperCase() : name);
 	const measure = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d')! : null;
 	const fontSize = $derived(
@@ -317,13 +327,15 @@
 			onpointercancel={up}
 		>
 			{#if portrait}
-				<img
-					class="portrait"
-					src={portrait.src}
-					alt=""
-					draggable="false"
-					style:transform="translate({tr.x}px, {tr.y}px) scale({tr.scale})"
-				/>
+				<div class="shot" class:cut={cutting} style:clip-path={clip}>
+					<img
+						class="portrait"
+						src={portrait.src}
+						alt=""
+						draggable="false"
+						style:transform="translate({tr.x}px, {tr.y}px) scale({tr.scale})"
+					/>
+				</div>
 			{/if}
 
 			{#if mode === 'full'}
@@ -513,6 +525,15 @@
 		box-shadow: 0 10px 40px #0009;
 		touch-action: none;
 		user-select: none;
+	}
+
+	.shot {
+		position: absolute;
+		inset: 0;
+	}
+	/* above the template, so the clip is what lets it through */
+	.shot.cut {
+		z-index: 1;
 	}
 
 	.portrait {
