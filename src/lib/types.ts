@@ -25,8 +25,10 @@ export type TemplateConfig = {
 	width: number;
 	height: number;
 	exportScale: number;
-	/** The transparent hole the portrait shows through. */
+	/** The hole the portrait shows through. */
 	window: Rect;
+	/** Template PNG has no transparent hole — clip the portrait to `window` instead. */
+	cutout?: boolean;
 	nameBox: Rect;
 	nameStyle: NameStyle;
 	/** Hidden from the picker but still loadable, so old flyers keep rendering. */
